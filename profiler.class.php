@@ -1,6 +1,6 @@
 <?php
 /*
- * This is simple PHP profiler.
+ * This is a simple PHP profiler.
  * Usage is very simple:
  *
  * Profiler::point(); - set's point
@@ -33,6 +33,14 @@ final class Profiler {
     const REPORT_PRINT_FALSE = true;
 
     /**
+     * Power const's
+     *
+     * @const bool
+     */
+    const POWER_ON = true;
+    const POWER_OFF = false;
+
+    /**
      * Log separator
      *
      * @const String
@@ -45,6 +53,13 @@ final class Profiler {
      * @var array
      */
     private static $stack = array();
+
+    /**
+     * Warehouse for tracing calls
+     *
+     * @var array
+     */
+    private static $trace = array();
 
     /**
      * Put messages into error.log or not
@@ -68,6 +83,13 @@ final class Profiler {
     private static $totalTime = 0;
 
     /**
+     * Power button constant
+     *
+     * @const bool
+     */
+    private static $enable = self::POWER_ON;
+
+    /**
      * Turn or off log input
      *
      * @param bool $log
@@ -79,10 +101,34 @@ final class Profiler {
         if ($log)
         {
             self::$log = self::LOG_TRUE;
-        } else
-        {
+        } else {
             self::$log = self::LOG_FALSE;
         }
+    }
+
+    /**
+     * Turn ON or OFF depend from parameter received
+     *
+     * @return nothing
+     */
+    public static function enable($mode)
+    {
+        if ($mode == self::POWER_ON)
+        {
+            self::$enable = self::POWER_ON;
+        } else {
+            self::$enable = self::POWER_OFF;
+        }
+    }
+
+    /**
+     * Is service enable?
+     *
+     * @return bool True if service is enabled and false if service isn't enabled.
+     */
+    public static function isEnable()
+    {
+        return (self::$enable == self::POWER_ON);
     }
 
     /**
@@ -94,6 +140,11 @@ final class Profiler {
      */
     public static function point($name, $group = '')
     {
+        if (!self::isEnable())
+        {
+            return ;
+        }
+        self::printLogsStartMessage();
         $newPoint = array();
         $currentTime = microtime(true);
         $currentRuntime = 0;
@@ -103,22 +154,23 @@ final class Profiler {
         }
         $newPoint["name"] = $name;
         $newPoint["time"] = $currentRuntime;
+        self::$totalTime += $currentRuntime;
+        $newPoint["overall"] = self::$totalTime;
         self::detectMemoryUsage($newPoint);
         self::$stack[$group][] = $newPoint;
         if (self::isLogEnabled())
         {
             $log = array();
-            $log[] = self::LOG_SEPARATOR."Profiler event: \"".$newPoint["name"]."\"";
+            $log[] = "Profiler event: \"".$newPoint["name"]."\"";
             if (!empty($group)) {
                 $log[] = "Group: ".$group;
             }
             if (self::$previousTime != 0 && self::$previousTime < $currentTime)
             {
-                self::$totalTime += $currentRuntime;
                 $log[] = "Time: ".$currentRuntime;
+                $log[] = "Overall: ".$newPoint["overall"];
             }
-            $log[] = self::LOG_SEPARATOR;
-            error_log(implode(',', $log));
+            self::errorLog(implode(',', $log));
         }
         self::$previousTime = $currentTime;
     }
@@ -130,8 +182,11 @@ final class Profiler {
      */
     public static function report($print = self::REPORT_PRINT_FALSE)
     {
+        if (!self::isEnable())
+        {
+            return ;
+        }
         $ascii_table = new ascii_table();
-        $totalTime = 0;
         $report = array();
         $report[] = <<<REPORT
 <!--
@@ -142,24 +197,92 @@ REPORT;
         foreach (self::$stack as $groupName => $group)
         {
             $tableName = "DEFAULT";
-            if (!empty($groupName)) {
+            if (!empty($groupName))
+            {
                 $tableName = $groupName;
             }
             $report[] = $ascii_table->make_table($group,$tableName,true);
 
         }
         $report[] = "TOTAL RUNTIME: ".self::$totalTime;
-        if (self::isLogEnabled()) {
-            error_log("TOTAL RUNTIME: ".self::$totalTime);
+        if (self::isLogEnabled())
+        {
+            self::errorLog("TOTAL RUNTIME: ".self::$totalTime);
+        }
+
+        if (count(self::$trace)>0) {
+            $report[] = "TRACES ";
+            foreach (self::$trace as $group => $traceValue) {
+                $report[] = "TRACE: ".$group;
+                foreach ($traceValue as $trace) {
+                    $report[] = self::formatLogString($trace);
+                }
+                $report[] = "END TRACE: ".$group;
+            }
         }
         $report[] = <<<REPORT
 -->
 REPORT;
         $reportResult = implode("\n", $report);
-        if ($print == self::REPORT_PRINT_TRUE) {
+        if ($print == self::REPORT_PRINT_TRUE)
+        {
             echo $reportResult;
         }
         return $reportResult;
+    }
+
+    /**
+     * Returns stack trace for point
+     *
+     * @return string
+     * @author http://php.net/manual/en/function.debug-backtrace.php#112238
+     */
+    public static function trace($name = "")
+    {
+        if (!self::isEnable())
+        {
+            return ;
+        }
+        self::printLogsStartMessage();
+        if (empty($name))
+        {
+            $groupName = "default";
+        } else {
+            $groupName = $name;
+        }
+        $trace = debug_backtrace();
+        if (count($trace) == 0 || !isset($trace[0]))
+        {
+            return ;
+        }
+        if (empty($groupName) && isset($trace[0]))
+        {
+            $group = array();
+            if (isset($trace[0]["file"])) {
+                $group[] = $trace[0]["file"];
+            }
+            if (isset($trace[0]["line"])) {
+                $group[] = ":".$trace[0]["line"];
+            }
+            $groupName = implode(',', $group);
+        }
+        if (self::isLogEnabled())
+        {
+            self::errorLog("Trace: \"".$groupName."\":");
+        }
+        foreach ($trace as $key=>$currentTrace)
+        {
+            self::$trace[$groupName][] = $currentTrace;
+            if (self::isLogEnabled())
+            {
+                $message = self::formatLogString($currentTrace);
+                self::errorLog($message);
+            }
+        }
+        if (self::isLogEnabled())
+        {
+            self::errorLog("End of trace: \"".$groupName."\"");
+        }
     }
 
     /**
@@ -170,6 +293,7 @@ REPORT;
     public static function resetData()
     {
         self::$stack = array();
+        self::$trace = array();
         self::$previousTime = 0;
         self::$totalTime = 0;
     }
@@ -197,6 +321,81 @@ REPORT;
         $newPoint["memory_limit"] = (int) ini_get('memory_limit') ;
         if ( !empty($newPoint["memory_usage"]) && !empty($newPoint["memory_limit"]) ) {
             $newPoint["memory_percent"] = round ($newPoint["memory_usage"] / $newPoint["memory_limit"] * 100, 0);
+        }
+    }
+
+    /**
+     * Prints message into the error_log
+     *
+     * @param $message
+     *
+     * @return nothing
+     */
+    private static function errorLog($message)
+    {
+        error_log(self::LOG_SEPARATOR.$message.self::LOG_SEPARATOR);
+    }
+
+    /**
+     * Formats readable trace string
+     *
+     * @param array $currentTrace Array with trace data
+     *
+     * @return string Formatted string
+     */
+    private static function formatLogString($currentTrace)
+    {
+        $log = array();
+        if (!empty($currentTrace["file"])) {
+            $log[] = $currentTrace["file"];
+        }
+        if (!empty($currentTrace["line"])) {
+            $log[] = ':'.$currentTrace["line"];
+        }
+        if (!empty($currentTrace["class"]) || !empty($currentTrace["function"])) {
+            $log[] = ' <';
+            $hasClass = false;
+            if (!empty($currentTrace["class"])) {
+                $log[] = $currentTrace["class"];
+                $hasClass = true;
+            }
+            if (!empty($currentTrace["function"])) {
+                if ($hasClass && isset($currentTrace["type"])) {
+                    $log[] = $currentTrace["type"];
+                }
+                $log[] = $currentTrace["function"];
+            }
+            $log[] = '>';
+        }
+        return implode('', $log);
+    }
+
+    /**
+     * Print introduce message
+     *
+     * @return nothing
+     */
+    private static function printLogsStartMessage() {
+        if ((count(self::$stack) != 0) || (count(self::$trace) != 0) || !self::isLogEnabled())
+        {
+            return ;
+        }
+        self::errorLog('Profiler instance: '.date('d.m.Y H:i:s'));
+        if (isset($_SERVER["REQUEST_URI"])) {
+            $log = array();
+            $log[] = "URL: ";
+            if (isset($_SERVER["HTTPS"])) {
+                $log[] = 'https://';
+            } else {
+                $log[] = 'http://';
+            }
+            if (isset($_SERVER["HTTP_HOST"])) {
+                $log[] = $_SERVER["HTTP_HOST"];
+            }
+            if (isset($_SERVER["REQUEST_URI"])) {
+                $log[] = $_SERVER["REQUEST_URI"];
+            }
+            self::errorLog(implode('', $log));
         }
     }
 }
