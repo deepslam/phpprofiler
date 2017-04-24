@@ -1,4 +1,4 @@
-#Lightweight PHP profiler class
+# Lightweight PHP profiler class
 
 [Developer website](http://ivanovdmitry.com)
 
@@ -28,13 +28,13 @@ If you wish to use final report I recommend place code as end as possible.
 
 Error log output is enabled by default.
 
-#Installation
+# Installation
 
 ```php
 require_once('phpprofiler/profiler.class.php');
 ```
 
-#Usage
+# Usage
 
 There aren't difficult methods in this script.
 
@@ -75,7 +75,7 @@ Reset all data:
 Profiler::resetData
 ```
 
-#Example
+# Example
 
 ```php
 require_once('phpprofiler/profiler.class.php');
@@ -85,7 +85,7 @@ Profiler::point("End point");
 Profiler::report(true);
 ```
 
-#Support
+# Support
 
 If you have any questions about this class you can e-mail author:
 
