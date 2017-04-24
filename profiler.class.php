@@ -66,7 +66,7 @@ final class Profiler {
      *
      * @var bool
      */
-    private static $log = self::LOG_FALSE;
+    private static $log = self::LOG_TRUE;
 
     /**
      * Point of previous time
